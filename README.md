@@ -170,53 +170,39 @@ tour-guide --version
 
 ## Quick Start
 
+### Demo Mode
+
+Run a quick demo with Tel Aviv to Jerusalem:
+
+```bash
+uv run tour-guide demo
+```
+
+This will showcase the complete system with a pre-configured route!
+
 ### Basic Usage
 
 Plan a tour from Tel Aviv to Jerusalem:
 
 ```bash
-uv run tour-guide route "Tel Aviv" "Jerusalem"
+uv run tour-guide run "Tel Aviv" "Jerusalem"
 ```
 
 This will:
 1. ✅ Plan the route using OSRM
-2. ✅ Analyze route and find 10 interesting POIs
+2. ✅ Analyze route and find interesting POIs
 3. ✅ Generate content for each POI (parallel processing)
 4. ✅ Judge and select the best content
-5. ✅ Display animated journey in terminal (5-second delays)
-
-### Skip Animation (Fast Mode)
-
-For quick results without delays:
-
-```bash
-uv run tour-guide route "Tel Aviv" "Jerusalem" --no-animation
-```
+5. ✅ Display beautiful journey in terminal
 
 ### Export Results
 
 Export to JSON and Markdown:
 
 ```bash
-uv run tour-guide route "Tel Aviv" "Jerusalem" \
+uv run tour-guide run "Tel Aviv" "Jerusalem" \
     --json-output output/journey.json \
     --markdown-output output/report.md
-```
-
-### Use Coordinates
-
-You can also use coordinates instead of place names:
-
-```bash
-uv run tour-guide route "32.0853,34.7818" "31.7683,35.2137"
-```
-
-### Customize Number of POIs
-
-Select 5 POIs instead of the default 10:
-
-```bash
-uv run tour-guide route "Haifa" "Akko" --poi-count 5
 ```
 
 ### Diagnose Issues
@@ -243,46 +229,46 @@ uv run tour-guide diagnose --output diagnosis.md
 
 ### Commands
 
-#### `tour-guide route <origin> <destination>`
+#### `tour-guide run <origin> <destination>`
 
 Plan a tour guide journey between two locations.
 
 **Arguments:**
-- `origin` - Starting location (place name or "lat,lon")
-- `destination` - Ending location (place name or "lat,lon")
+- `origin` - Starting location (place name)
+- `destination` - Ending location (place name)
 
 **Options:**
 
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--json-output PATH` | `-j` | Export results to JSON file | None |
-| `--markdown-output PATH` | `-m` | Generate Markdown report | None |
-| `--no-animation` | | Skip 5-second delays between POIs | False |
-| `--poi-count N` | `-n` | Number of POIs to select | 10 |
-| `--config PATH` | `-c` | Path to custom config file | config/default.yaml |
-| `--log-level LEVEL` | `-l` | Log level (DEBUG, INFO, WARNING, ERROR) | INFO |
-| `--verbose` | `-v` | Enable verbose output | False |
-| `--quiet` | `-q` | Suppress progress bars | False |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--json-output PATH` | Export results to JSON file | None |
+| `--markdown-output PATH` | Generate Markdown report | None |
+| `--no-delay` | Skip delays in journey display | False |
 
 **Examples:**
 
 ```bash
 # Basic usage
-uv run tour-guide route "Tel Aviv" "Jerusalem"
+uv run tour-guide run "Tel Aviv" "Jerusalem"
 
-# With all options
-uv run tour-guide route "Tel Aviv" "Jerusalem" \
+# With exports
+uv run tour-guide run "Tel Aviv" "Jerusalem" \
     --json-output results.json \
-    --markdown-output report.md \
-    --no-animation \
-    --poi-count 8 \
-    --verbose
+    --markdown-output report.md
 
-# Using coordinates
-uv run tour-guide route "32.0853,34.7818" "31.7683,35.2137"
+# Fast mode (no delays)
+uv run tour-guide run "Haifa" "Akko" --no-delay
+```
 
-# Custom config
-uv run tour-guide route "Haifa" "Akko" --config my_config.yaml
+#### `tour-guide demo`
+
+Run a demonstration with the Tel Aviv to Jerusalem route.
+
+**Examples:**
+
+```bash
+# Run demo
+uv run tour-guide demo
 ```
 
 #### `tour-guide diagnose`
@@ -454,7 +440,7 @@ Override configuration values with environment variables:
 ```bash
 export TOUR_GUIDE_LOG_LEVEL=DEBUG
 export TOUR_GUIDE_CLAUDE_MODEL=claude-opus-4
-uv run tour-guide route "Tel Aviv" "Jerusalem"
+uv run tour-guide run "Tel Aviv" "Jerusalem"
 ```
 
 ---
@@ -706,13 +692,13 @@ Tour Guide includes 10 pre-configured Israeli test routes for validation:
 
 ```bash
 # Route 1: Tel Aviv to Jerusalem
-uv run tour-guide route "Tel Aviv" "Jerusalem"
+uv run tour-guide run "Tel Aviv" "Jerusalem"
 
 # Route 3: Long distance route
-uv run tour-guide route "Tel Aviv" "Eilat"
+uv run tour-guide run "Tel Aviv" "Eilat"
 
 # Route 9: Short route
-uv run tour-guide route "Jerusalem" "Bethlehem"
+uv run tour-guide run "Jerusalem" "Bethlehem"
 ```
 
 ### Run All Test Routes (Automated)
@@ -1030,7 +1016,8 @@ uv run tour-guide diagnose --agent youtube
 **Solution**:
 ```bash
 # Enable verbose logging
-uv run tour-guide route "Tel Aviv" "Jerusalem" --log-level DEBUG --verbose
+export TOUR_GUIDE_LOG_LEVEL=DEBUG
+uv run tour-guide run "Tel Aviv" "Jerusalem"
 
 # Check logs
 cat logs/tour_guide_*.log | grep ERROR
