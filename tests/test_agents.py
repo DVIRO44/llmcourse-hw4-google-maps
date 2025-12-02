@@ -6,6 +6,7 @@ from tour_guide.agents.base import BaseAgent, AgentError
 from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
 from tour_guide.agents.youtube import YouTubeAgent
 from tour_guide.agents.spotify import SpotifyAgent
+from tour_guide.agents.history import HistoryAgent
 from tour_guide.models import POI, POICategory, ContentResult
 from tour_guide.routing.models import Route, Waypoint, RouteStep
 
@@ -616,5 +617,95 @@ class TestSpotifyAgent:
 
             with pytest.raises(AgentError) as exc_info:
                 spotify_agent.run(sample_poi)
+
+            assert "Claude CLI failed" in str(exc_info.value)
+
+
+class TestHistoryAgent:
+    """Tests for History Agent."""
+
+    @pytest.fixture
+    def history_agent(self):
+        """Create History agent."""
+        return HistoryAgent()
+
+    @pytest.fixture
+    def sample_poi(self):
+        """Create sample POI for testing."""
+        return POI(
+            name="Masada",
+            lat=31.3157,
+            lon=35.3540,
+            description="Ancient fortress on a rock plateau",
+            category=POICategory.HISTORICAL,
+            distance_from_start_km=100.0,
+        )
+
+    @pytest.fixture
+    def mock_history_response(self):
+        """Mock Claude response with historical narrative."""
+        return """```json
+{
+  "story": {
+    "title": "The Last Stand at Masada",
+    "narrative": "In 73 CE, atop an isolated rock plateau overlooking the Dead Sea, 960 Jewish rebels made their last stand against the might of Rome. Led by Eleazar ben Ya'ir, these Zealots had fled Jerusalem after the destruction of the Second Temple in 70 CE. For nearly three years, they held out in King Herod's former palace-fortress, built a century earlier. The Roman Tenth Legion, under Flavius Silva, laid siege with 15,000 soldiers. When defeat became inevitable, rather than face slavery or execution, the defenders chose mass suicide. According to Josephus, they drew lots to select ten men who would kill the others, then one final man to kill the remaining nine before taking his own life. When the Romans finally breached the walls, they found only silence and bodies. Two women and five children, who had hidden in a cistern, survived to tell the tale.",
+    "key_facts": [
+      "Masada was built by Herod the Great between 37-31 BCE",
+      "The siege lasted from 73-74 CE during the First Jewish-Roman War",
+      "960 Zealots chose mass suicide over Roman enslavement",
+      "Archaeological excavations in the 1960s confirmed historical accounts"
+    ],
+    "relevance_score": 98,
+    "time_period": "73-74 CE",
+    "historical_figures": ["Eleazar ben Ya'ir", "Flavius Silva", "Josephus"]
+  }
+}
+```"""
+
+    def test_history_agent_initialization(self, history_agent):
+        """Test that History agent initializes correctly."""
+        assert history_agent.agent_name == "history"
+
+    def test_run_with_valid_poi(self, history_agent, sample_poi, mock_history_response):
+        """Test generating narrative for POI."""
+        with patch("tour_guide.agents.history.call_claude") as mock_claude:
+            mock_claude.return_value = mock_history_response
+
+            result = history_agent.run(sample_poi)
+
+            assert isinstance(result, ContentResult)
+            assert result.content_type == "history"
+            assert result.title == "The Last Stand at Masada"
+            assert len(result.description) > 300  # Check narrative length
+            assert result.relevance_score == 98
+            assert len(result.metadata["key_facts"]) == 4
+            assert result.metadata["time_period"] == "73-74 CE"
+            assert result.poi_name == "Masada"
+
+    def test_run_with_invalid_input(self, history_agent):
+        """Test that invalid input raises AgentError."""
+        with pytest.raises(AgentError) as exc_info:
+            history_agent.run("not a poi")
+
+        assert "Expected POI object" in str(exc_info.value)
+
+    def test_parse_response_success(self, history_agent, mock_history_response):
+        """Test parsing valid Claude response."""
+        result = history_agent._parse_response(mock_history_response, "Masada")
+
+        assert result.title == "The Last Stand at Masada"
+        assert result.content_type == "history"
+        assert result.relevance_score == 98
+        assert "Eleazar ben Ya'ir" in result.metadata["historical_figures"]
+
+    def test_run_handles_claude_error(self, history_agent, sample_poi):
+        """Test that Claude errors are handled properly."""
+        from tour_guide.utils.claude_cli import ClaudeError
+
+        with patch("tour_guide.agents.history.call_claude") as mock_claude:
+            mock_claude.side_effect = ClaudeError("CLI failed")
+
+            with pytest.raises(AgentError) as exc_info:
+                history_agent.run(sample_poi)
 
             assert "Claude CLI failed" in str(exc_info.value)
