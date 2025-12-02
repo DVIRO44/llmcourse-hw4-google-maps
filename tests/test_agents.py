@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import Mock, patch, mock_open
 from tour_guide.agents.base import BaseAgent, AgentError
+from tour_guide.models import POI, POICategory
 
 
 class TestBaseAgent:
@@ -122,3 +123,106 @@ class TestBaseAgent:
                 test_agent.diagnose()
 
             assert "Failed to get diagnostic analysis" in str(exc_info.value)
+
+
+class TestPOI:
+    """Tests for POI model."""
+
+    def test_poi_creation_success(self):
+        """Test creating a valid POI."""
+        poi = POI(
+            name="Masada",
+            lat=31.3157,
+            lon=35.3540,
+            description="Ancient fortress overlooking the Dead Sea",
+            category=POICategory.HISTORICAL,
+            distance_from_start_km=45.2,
+        )
+
+        assert poi.name == "Masada"
+        assert poi.lat == 31.3157
+        assert poi.lon == 35.3540
+        assert poi.category == POICategory.HISTORICAL
+        assert poi.distance_from_start_km == 45.2
+
+    def test_poi_coordinates_property(self):
+        """Test coordinates property returns tuple."""
+        poi = POI(
+            name="Test",
+            lat=32.0,
+            lon=34.0,
+            description="Test POI",
+            category=POICategory.CULTURAL,
+            distance_from_start_km=0.0,
+        )
+
+        assert poi.coordinates == (32.0, 34.0)
+
+    def test_poi_invalid_latitude(self):
+        """Test that invalid latitude raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            POI(
+                name="Invalid",
+                lat=100.0,  # > 90
+                lon=34.0,
+                description="Test",
+                category=POICategory.NATURAL,
+                distance_from_start_km=0.0,
+            )
+
+        assert "Invalid latitude" in str(exc_info.value)
+
+    def test_poi_invalid_longitude(self):
+        """Test that invalid longitude raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            POI(
+                name="Invalid",
+                lat=32.0,
+                lon=200.0,  # > 180
+                description="Test",
+                category=POICategory.NATURAL,
+                distance_from_start_km=0.0,
+            )
+
+        assert "Invalid longitude" in str(exc_info.value)
+
+    def test_poi_invalid_distance(self):
+        """Test that negative distance raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            POI(
+                name="Invalid",
+                lat=32.0,
+                lon=34.0,
+                description="Test",
+                category=POICategory.NATURAL,
+                distance_from_start_km=-5.0,  # Negative
+            )
+
+        assert "Invalid distance" in str(exc_info.value)
+
+    def test_poi_category_from_string(self):
+        """Test that category can be created from string."""
+        poi = POI(
+            name="Test",
+            lat=32.0,
+            lon=34.0,
+            description="Test POI",
+            category="cultural",  # String instead of enum
+            distance_from_start_km=0.0,
+        )
+
+        assert poi.category == POICategory.CULTURAL
+
+    def test_poi_invalid_category_string(self):
+        """Test that invalid category string raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            POI(
+                name="Test",
+                lat=32.0,
+                lon=34.0,
+                description="Test",
+                category="invalid_category",
+                distance_from_start_km=0.0,
+            )
+
+        assert "Invalid category" in str(exc_info.value)
