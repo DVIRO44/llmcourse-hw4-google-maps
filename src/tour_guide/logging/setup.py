@@ -81,6 +81,11 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"tour_guide.{name}")
 
 
+def get_log_dir() -> Path:
+    """Get the log directory path."""
+    return Path("logs")
+
+
 def reset_logging():
     """Reset logging (for testing)."""
     global _initialized
