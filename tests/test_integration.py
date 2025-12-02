@@ -382,8 +382,8 @@ class TestOrchestrator:
 
     def test_error_handling_unknown_location(self, orchestrator):
         """Test error handling with unknown location."""
-        # Should raise ValueError for unknown location
-        with pytest.raises(ValueError, match="Unknown location"):
+        # Should raise ValueError for unknown location (tries geocoding first)
+        with pytest.raises(ValueError, match="Could not geocode"):
             orchestrator.run("Unknown City", "Jerusalem")
 
     def test_error_handling_poi_analysis_failure(self, orchestrator, mock_route):
@@ -499,3 +499,51 @@ class TestOrchestrator:
                 result3 = orchestrator.run("TEL AVIV", "JERUSALEM")
 
                 assert all(isinstance(r, JourneyResult) for r in [result1, result2, result3])
+
+    def test_long_route_with_waypoint_sampling(self, orchestrator):
+        """Test that long routes with many waypoints use sampling."""
+        # Create a long route with many waypoints (like Holon to Kiryat Shmona)
+        waypoints = []
+        num_waypoints = 2457  # Realistic number from actual route
+        for i in range(num_waypoints):
+            waypoints.append(
+                Waypoint(
+                    lat=32.0 + (i / num_waypoints),
+                    lon=34.8 + (i / num_waypoints) * 0.5,
+                    distance_from_start_km=(i / num_waypoints) * 200.0,
+                )
+            )
+
+        long_route = Route(
+            origin=(32.0117, 34.7750),  # Holon
+            destination=(33.2074, 35.5697),  # Kiryat Shmona
+            total_distance_km=200.0,
+            total_duration_min=150.0,
+            waypoints=waypoints,
+            steps=[
+                RouteStep(instruction="Head north on Route 4", distance_km=100.0, duration_min=75.0),
+                RouteStep(instruction="Continue to Kiryat Shmona", distance_km=100.0, duration_min=75.0),
+            ],
+            source="osrm",
+        )
+
+        # Mock the route analyzer to capture the route it receives
+        with patch.object(orchestrator.route_analyzer, "run", return_value=[]) as mock_analyzer:
+            with patch.object(orchestrator.content_pipeline, "run", return_value=[]):
+                with patch.object(orchestrator.osrm_client, "get_route", return_value=long_route):
+                    result = orchestrator.run("holon", "kiryat shmona")
+
+                    # Verify orchestrator completed successfully
+                    assert isinstance(result, JourneyResult)
+
+                    # Verify route analyzer was called with the long route
+                    assert mock_analyzer.called
+                    route_arg = mock_analyzer.call_args[0][0]
+                    assert isinstance(route_arg, Route)
+                    assert len(route_arg.waypoints) == num_waypoints
+
+                    # The route should have a method to sample waypoints
+                    sampled = route_arg.get_sampled_waypoints(max_points=30)
+                    assert len(sampled) == 30
+                    assert sampled[0] == route_arg.waypoints[0]  # Start
+                    assert sampled[-1] == route_arg.waypoints[-1]  # End

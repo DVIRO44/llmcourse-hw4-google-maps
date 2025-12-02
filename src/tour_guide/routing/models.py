@@ -33,3 +33,32 @@ class Route:
     waypoints: List[Waypoint]
     steps: List[RouteStep]
     source: str  # "osrm" or "claude"
+
+    def get_sampled_waypoints(self, max_points: int = 30) -> List[Waypoint]:
+        """
+        Sample waypoints for long routes to reduce Claude API payload size.
+
+        For routes with many waypoints, this returns an evenly distributed
+        subset to prevent timeouts during POI analysis.
+
+        Args:
+            max_points: Maximum number of waypoints to return (default: 30)
+
+        Returns:
+            List of sampled waypoints, always including start and end points
+        """
+        if len(self.waypoints) <= max_points:
+            return self.waypoints
+
+        # Always include start and end
+        sampled = [self.waypoints[0]]
+
+        # Calculate step size for even distribution
+        step = len(self.waypoints) / (max_points - 1)
+
+        for i in range(1, max_points - 1):
+            index = int(i * step)
+            sampled.append(self.waypoints[index])
+
+        sampled.append(self.waypoints[-1])
+        return sampled

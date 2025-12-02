@@ -11,6 +11,7 @@ from tour_guide.models.judgment import JudgmentResult
 from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
 from tour_guide.parallel.pipeline import ContentPipeline
 from tour_guide.logging import get_logger
+from tour_guide.utils.geocoding import geocode_location
 
 logger = get_logger("orchestrator")
 
@@ -80,6 +81,10 @@ class TourGuideOrchestrator:
 
             # Step 2: Analyze route for POIs
             self.logger.info("Step 2: Analyzing route for POIs...")
+            self.logger.info(
+                f"Route complexity: {len(route.waypoints)} waypoints, "
+                f"{route.total_distance_km:.1f} km"
+            )
             pois = self._analyze_route(route)
             self.logger.info(f"Found {len(pois)} POIs along route")
 
@@ -163,13 +168,24 @@ class TourGuideOrchestrator:
             origin_lower = origin.lower()
             dest_lower = destination.lower()
 
+            # Try hardcoded map first
             origin_coords = coords_map.get(origin_lower)
             dest_coords = coords_map.get(dest_lower)
 
-            if not origin_coords or not dest_coords:
-                raise ValueError(
-                    f"Unknown location: {origin if not origin_coords else destination}"
-                )
+            # Fallback to Claude-based geocoding for unknown locations
+            if not origin_coords:
+                self.logger.info(f"'{origin}' not in map, using Claude to geocode")
+                origin_coords = geocode_location(origin)
+                if not origin_coords:
+                    raise ValueError(f"Could not geocode origin location: {origin}")
+
+            if not dest_coords:
+                self.logger.info(f"'{destination}' not in map, using Claude to geocode")
+                dest_coords = geocode_location(destination)
+                if not dest_coords:
+                    raise ValueError(
+                        f"Could not geocode destination location: {destination}"
+                    )
 
             route = self.osrm_client.get_route(origin_coords, dest_coords)
             return route

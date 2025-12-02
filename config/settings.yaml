@@ -10,8 +10,9 @@ routing:
   timeout_seconds: 10
 
 agents:
-  content_timeout: 30
-  judge_timeout: 10
+  content_timeout: 60
+  judge_timeout: 30
+  route_analyzer_timeout: 90
   max_retries: 2
 
 output:

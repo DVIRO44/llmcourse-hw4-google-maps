@@ -35,13 +35,28 @@ class RouteAnalyzerAgent(BaseAgent):
 
         route = input_data
 
+        # Log route complexity
         self.logger.info(
-            f"Analyzing route: {route.total_distance_km:.1f} km, "
-            f"{len(route.waypoints)} waypoints"
+            f"Route complexity: {len(route.waypoints)} waypoints, "
+            f"{route.total_distance_km:.1f} km"
         )
+
+        # Sample waypoints for long routes to reduce payload size
+        sampled_waypoints = route.get_sampled_waypoints(max_points=30)
+        if len(sampled_waypoints) < len(route.waypoints):
+            self.logger.info(
+                f"Using {len(sampled_waypoints)} sampled waypoints "
+                f"(reduced from {len(route.waypoints)})"
+            )
 
         # Determine appropriate POI count based on route length
         poi_count = self._determine_poi_count(route.total_distance_km)
+
+        # Format waypoints data
+        waypoints_data = self._format_waypoints(sampled_waypoints)
+
+        # Extract named places from route steps
+        named_places = self._extract_named_places(route.steps)
 
         # Create prompt
         origin_str = f"{route.origin[0]:.4f},{route.origin[1]:.4f}"
@@ -52,14 +67,16 @@ class RouteAnalyzerAgent(BaseAgent):
             destination=dest_str,
             distance_km=route.total_distance_km,
             duration_min=route.total_duration_min,
-            waypoints_count=len(route.waypoints),
+            waypoints_data=waypoints_data,
+            named_places=named_places,
             poi_count=poi_count,
         )
 
         try:
-            # Call Claude
-            self.logger.debug(f"Requesting {poi_count} POIs from Claude")
-            response = call_claude(prompt, timeout=30)
+            # Call Claude with increased timeout for long routes
+            timeout = getattr(self.settings.agents, 'route_analyzer_timeout', 90)
+            self.logger.debug(f"Requesting {poi_count} POIs from Claude (timeout: {timeout}s)")
+            response = call_claude(prompt, timeout=timeout)
 
             # Parse response
             pois = self._parse_response(response)
@@ -93,6 +110,44 @@ class RouteAnalyzerAgent(BaseAgent):
             return min(5, self.poi_count)
         else:
             return self.poi_count
+
+    def _format_waypoints(self, waypoints) -> str:
+        """
+        Format waypoints as a readable string with coordinates.
+
+        Args:
+            waypoints: List of Waypoint objects
+
+        Returns:
+            Formatted string with waypoint coordinates
+        """
+        lines = []
+        for i, wp in enumerate(waypoints):
+            lines.append(
+                f"Point {i + 1}: ({wp.lat:.4f}, {wp.lon:.4f}) "
+                f"at {wp.distance_from_start_km:.1f} km from start"
+            )
+        return "\n".join(lines) if lines else "No waypoints available"
+
+    def _extract_named_places(self, steps) -> str:
+        """
+        Extract named places from route steps.
+
+        Args:
+            steps: List of RouteStep objects
+
+        Returns:
+            Formatted string with named locations
+        """
+        places = []
+        for step in steps:
+            instruction = step.instruction.lower()
+            # Extract place names from instructions (common patterns)
+            # This is a simple extraction - could be improved with NLP
+            if "route" in instruction or "road" in instruction:
+                places.append(step.instruction)
+
+        return "\n".join(places) if places else "Route instructions not available"
 
     def _parse_response(self, response: str) -> List[POI]:
         """

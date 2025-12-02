@@ -26,6 +26,7 @@ class RoutingConfig:
 class AgentsConfig:
     content_timeout: int = 30
     judge_timeout: int = 10
+    route_analyzer_timeout: int = 90
     max_retries: int = 2
 
 

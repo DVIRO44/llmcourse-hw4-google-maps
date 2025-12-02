@@ -5,7 +5,12 @@ ROUTE_ANALYZER_PROMPT = """Analyze this driving route and identify the {poi_coun
 Route: {origin} to {destination}
 Total Distance: {distance_km:.1f} km
 Total Duration: {duration_min:.0f} minutes
-Waypoints: {waypoints_count} waypoints along the route
+
+Route Path (sampled waypoints):
+{waypoints_data}
+
+Named Locations Along Route:
+{named_places}
 
 For each POI, provide:
 - name: The place name
@@ -49,7 +54,8 @@ def format_route_analyzer_prompt(
     destination: str,
     distance_km: float,
     duration_min: float,
-    waypoints_count: int,
+    waypoints_data: str,
+    named_places: str,
     poi_count: int = 10,
 ) -> str:
     """
@@ -60,7 +66,8 @@ def format_route_analyzer_prompt(
         destination: Destination location name
         distance_km: Total route distance in km
         duration_min: Total route duration in minutes
-        waypoints_count: Number of waypoints
+        waypoints_data: Formatted string with waypoint coordinates
+        named_places: Formatted string with named locations from route steps
         poi_count: Number of POIs to select (default: 10)
 
     Returns:
@@ -71,6 +78,7 @@ def format_route_analyzer_prompt(
         destination=destination,
         distance_km=distance_km,
         duration_min=duration_min,
-        waypoints_count=waypoints_count,
+        waypoints_data=waypoints_data,
+        named_places=named_places,
         poi_count=poi_count,
     )
