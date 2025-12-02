@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch, mock_open
 from tour_guide.agents.base import BaseAgent, AgentError
 from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
 from tour_guide.agents.youtube import YouTubeAgent
+from tour_guide.agents.spotify import SpotifyAgent
 from tour_guide.models import POI, POICategory, ContentResult
 from tour_guide.routing.models import Route, Waypoint, RouteStep
 
@@ -531,5 +532,89 @@ class TestYouTubeAgent:
 
             with pytest.raises(AgentError) as exc_info:
                 youtube_agent.run(sample_poi)
+
+            assert "Claude CLI failed" in str(exc_info.value)
+
+
+class TestSpotifyAgent:
+    """Tests for Spotify Agent."""
+
+    @pytest.fixture
+    def spotify_agent(self):
+        """Create Spotify agent."""
+        return SpotifyAgent()
+
+    @pytest.fixture
+    def sample_poi(self):
+        """Create sample POI for testing."""
+        return POI(
+            name="Dead Sea",
+            lat=31.5590,
+            lon=35.4732,
+            description="Lowest point on Earth with unique salt water",
+            category=POICategory.NATURAL,
+            distance_from_start_km=50.0,
+        )
+
+    @pytest.fixture
+    def mock_spotify_response(self):
+        """Mock Claude response with music suggestion."""
+        return """```json
+{
+  "music": {
+    "title": "Dead Sea Meditation",
+    "artist": "Desert Wind Ensemble",
+    "type": "album",
+    "genre": "Ambient/World",
+    "relevance_score": 85,
+    "description": "Contemplative instrumental music inspired by the Dead Sea landscape",
+    "why_relevant": "Captures the serene and otherworldly atmosphere of the Dead Sea region"
+  }
+}
+```"""
+
+    def test_spotify_agent_initialization(self, spotify_agent):
+        """Test that Spotify agent initializes correctly."""
+        assert spotify_agent.agent_name == "spotify"
+
+    def test_run_with_valid_poi(self, spotify_agent, sample_poi, mock_spotify_response):
+        """Test finding music for POI."""
+        with patch("tour_guide.agents.spotify.call_claude") as mock_claude:
+            mock_claude.return_value = mock_spotify_response
+
+            result = spotify_agent.run(sample_poi)
+
+            assert isinstance(result, ContentResult)
+            assert result.content_type == "spotify"
+            assert result.title == "Dead Sea Meditation"
+            assert result.relevance_score == 85
+            assert result.metadata["artist"] == "Desert Wind Ensemble"
+            assert result.metadata["genre"] == "Ambient/World"
+            assert result.poi_name == "Dead Sea"
+
+    def test_run_with_invalid_input(self, spotify_agent):
+        """Test that invalid input raises AgentError."""
+        with pytest.raises(AgentError) as exc_info:
+            spotify_agent.run("not a poi")
+
+        assert "Expected POI object" in str(exc_info.value)
+
+    def test_parse_response_success(self, spotify_agent, mock_spotify_response):
+        """Test parsing valid Claude response."""
+        result = spotify_agent._parse_response(mock_spotify_response, "Dead Sea")
+
+        assert result.title == "Dead Sea Meditation"
+        assert result.content_type == "spotify"
+        assert result.relevance_score == 85
+
+    def test_run_handles_claude_error(self, spotify_agent, sample_poi):
+        """Test that Claude errors are handled properly."""
+        from tour_guide.utils.claude_cli import ClaudeError
+
+        with patch("tour_guide.agents.spotify.call_claude") as mock_claude:
+            mock_claude.side_effect = ClaudeError("CLI failed")
+
+            with pytest.raises(AgentError) as exc_info:
+                spotify_agent.run(sample_poi)
 
             assert "Claude CLI failed" in str(exc_info.value)
