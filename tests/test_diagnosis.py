@@ -1,0 +1,315 @@
+"""Tests for diagnosis system."""
+
+import json
+import pytest
+import tempfile
+from pathlib import Path
+from datetime import datetime, timedelta
+
+from tour_guide.diagnosis.parser import LogParser, LogEntry
+
+
+class TestLogParser:
+    """Tests for LogParser class."""
+
+    @pytest.fixture
+    def parser(self):
+        """Create LogParser instance."""
+        return LogParser()
+
+    @pytest.fixture
+    def sample_log_entries(self):
+        """Create sample log entries as JSON strings."""
+        return [
+            {
+                "timestamp": "2025-12-02T10:00:00",
+                "level": "INFO",
+                "logger": "tour_guide.agents.youtube",
+                "message": "Searching YouTube for content",
+                "module": "youtube",
+                "function": "search",
+                "line": 42,
+            },
+            {
+                "timestamp": "2025-12-02T10:00:01",
+                "level": "ERROR",
+                "logger": "tour_guide.agents.youtube",
+                "message": "TimeoutError: Request timed out",
+                "module": "youtube",
+                "function": "search",
+                "line": 45,
+                "exception": "TimeoutError: Request timed out",
+            },
+            {
+                "timestamp": "2025-12-02T10:00:02",
+                "level": "INFO",
+                "logger": "tour_guide.agents.spotify",
+                "message": "Found 5 tracks",
+                "module": "spotify",
+                "function": "search",
+                "line": 38,
+                "execution_time": 1.5,
+            },
+            {
+                "timestamp": "2025-12-02T10:00:03",
+                "level": "WARNING",
+                "logger": "tour_guide.agents.history",
+                "message": "Slow response from Claude",
+                "module": "history",
+                "function": "generate",
+                "line": 67,
+            },
+            {
+                "timestamp": "2025-12-02T10:00:04",
+                "level": "ERROR",
+                "logger": "tour_guide.agents.youtube",
+                "message": "Failed to connect",
+                "module": "youtube",
+                "function": "search",
+                "line": 48,
+            },
+        ]
+
+    @pytest.fixture
+    def temp_log_file(self, sample_log_entries):
+        """Create temporary log file with sample entries."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".log", delete=False
+        ) as f:
+            for entry in sample_log_entries:
+                f.write(json.dumps(entry) + "\n")
+            return Path(f.name)
+
+    def test_parse_file_valid(self, parser, temp_log_file):
+        """Test parsing a valid log file."""
+        entries = parser.parse_file(temp_log_file)
+
+        assert len(entries) == 5
+        assert all(isinstance(e, LogEntry) for e in entries)
+
+        # Check first entry
+        assert entries[0].level == "INFO"
+        assert entries[0].agent == "youtube"
+        assert entries[0].logger == "tour_guide.agents.youtube"
+
+        # Check second entry (error with exception)
+        assert entries[1].level == "ERROR"
+        assert entries[1].exception == "TimeoutError: Request timed out"
+
+        # Check third entry (with execution time)
+        assert entries[2].execution_time == 1.5
+        assert entries[2].agent == "spotify"
+
+        # Clean up
+        temp_log_file.unlink()
+
+    def test_parse_file_nonexistent(self, parser):
+        """Test parsing a nonexistent file."""
+        entries = parser.parse_file(Path("/nonexistent/file.log"))
+        assert entries == []
+
+    def test_parse_file_malformed_lines(self, parser):
+        """Test parsing file with malformed lines."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".log", delete=False
+        ) as f:
+            # Valid entry
+            f.write(
+                json.dumps(
+                    {
+                        "timestamp": "2025-12-02T10:00:00",
+                        "level": "INFO",
+                        "logger": "test",
+                        "message": "test",
+                        "module": "test",
+                        "function": "test",
+                        "line": 1,
+                    }
+                )
+                + "\n"
+            )
+            # Malformed JSON
+            f.write("not json at all\n")
+            # Another valid entry
+            f.write(
+                json.dumps(
+                    {
+                        "timestamp": "2025-12-02T10:00:01",
+                        "level": "ERROR",
+                        "logger": "test",
+                        "message": "error",
+                        "module": "test",
+                        "function": "test",
+                        "line": 2,
+                    }
+                )
+                + "\n"
+            )
+            log_path = Path(f.name)
+
+        entries = parser.parse_file(log_path)
+
+        # Should parse 2 valid entries, skip malformed
+        assert len(entries) == 2
+        assert entries[0].level == "INFO"
+        assert entries[1].level == "ERROR"
+
+        # Clean up
+        log_path.unlink()
+
+    def test_filter_by_agent(self, parser, temp_log_file):
+        """Test filtering entries by agent."""
+        entries = parser.parse_file(temp_log_file)
+
+        youtube_entries = parser.filter_by_agent(entries, "youtube")
+        assert len(youtube_entries) == 3  # 2 errors + 1 info
+        assert all(e.agent == "youtube" for e in youtube_entries)
+
+        spotify_entries = parser.filter_by_agent(entries, "spotify")
+        assert len(spotify_entries) == 1
+        assert spotify_entries[0].agent == "spotify"
+
+        history_entries = parser.filter_by_agent(entries, "history")
+        assert len(history_entries) == 1
+
+        # Clean up
+        temp_log_file.unlink()
+
+    def test_filter_by_level(self, parser, temp_log_file):
+        """Test filtering entries by log level."""
+        entries = parser.parse_file(temp_log_file)
+
+        error_entries = parser.filter_by_level(entries, "ERROR")
+        assert len(error_entries) == 2
+        assert all(e.level == "ERROR" for e in error_entries)
+
+        info_entries = parser.filter_by_level(entries, "INFO")
+        assert len(info_entries) == 2
+
+        warning_entries = parser.filter_by_level(entries, "WARNING")
+        assert len(warning_entries) == 1
+
+        # Clean up
+        temp_log_file.unlink()
+
+    def test_get_errors(self, parser, temp_log_file):
+        """Test getting all errors."""
+        entries = parser.parse_file(temp_log_file)
+        errors = parser.get_errors(entries)
+
+        assert len(errors) == 2
+        assert all(e.level == "ERROR" for e in errors)
+
+        # Clean up
+        temp_log_file.unlink()
+
+    def test_parse_recent(self, parser, sample_log_entries):
+        """Test parsing recent entries."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = Path(tmpdir)
+
+            # Create log file with entries from 1 hour ago
+            old_entries = [
+                {
+                    **sample_log_entries[0],
+                    "timestamp": (
+                        datetime.now() - timedelta(hours=2)
+                    ).isoformat(),
+                }
+            ]
+            with open(log_dir / "tour_guide_old.log", "w") as f:
+                for entry in old_entries:
+                    f.write(json.dumps(entry) + "\n")
+
+            # Create log file with recent entries
+            recent_entries = [
+                {**sample_log_entries[1], "timestamp": datetime.now().isoformat()}
+            ]
+            with open(log_dir / "tour_guide_recent.log", "w") as f:
+                for entry in recent_entries:
+                    f.write(json.dumps(entry) + "\n")
+
+            # Parse last 1 hour
+            entries = parser.parse_recent(log_dir, hours=1)
+
+            # Should only get recent entry
+            assert len(entries) == 1
+            assert entries[0].level == "ERROR"
+
+    def test_parse_empty_directory(self, parser):
+        """Test parsing empty directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            entries = parser.parse_recent(Path(tmpdir), hours=24)
+            assert entries == []
+
+    def test_timestamp_parsing(self, parser):
+        """Test various timestamp formats."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".log", delete=False
+        ) as f:
+            # ISO format with Z
+            f.write(
+                json.dumps(
+                    {
+                        "timestamp": "2025-12-02T10:00:00Z",
+                        "level": "INFO",
+                        "logger": "test",
+                        "message": "test",
+                        "module": "test",
+                        "function": "test",
+                        "line": 1,
+                    }
+                )
+                + "\n"
+            )
+            # ISO format without Z
+            f.write(
+                json.dumps(
+                    {
+                        "timestamp": "2025-12-02T10:00:01",
+                        "level": "INFO",
+                        "logger": "test",
+                        "message": "test",
+                        "module": "test",
+                        "function": "test",
+                        "line": 2,
+                    }
+                )
+                + "\n"
+            )
+            log_path = Path(f.name)
+
+        entries = parser.parse_file(log_path)
+        assert len(entries) == 2
+        assert all(isinstance(e.timestamp, datetime) for e in entries)
+
+        # Clean up
+        log_path.unlink()
+
+    def test_agent_extraction_from_message(self, parser):
+        """Test extracting agent from message when not in logger."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".log", delete=False
+        ) as f:
+            f.write(
+                json.dumps(
+                    {
+                        "timestamp": "2025-12-02T10:00:00",
+                        "level": "INFO",
+                        "logger": "tour_guide.routing",
+                        "message": "YouTube agent returned results",
+                        "module": "routing",
+                        "function": "process",
+                        "line": 1,
+                    }
+                )
+                + "\n"
+            )
+            log_path = Path(f.name)
+
+        entries = parser.parse_file(log_path)
+        assert len(entries) == 1
+        assert entries[0].agent == "youtube"
+
+        # Clean up
+        log_path.unlink()
