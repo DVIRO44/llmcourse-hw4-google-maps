@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import Mock, patch, mock_open
 from tour_guide.agents.base import BaseAgent, AgentError
 from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
+from tour_guide.agents.youtube import YouTubeAgent
 from tour_guide.models import POI, POICategory, ContentResult
 from tour_guide.routing.models import Route, Waypoint, RouteStep
 
@@ -433,3 +434,102 @@ class TestContentResult:
         assert result.metadata == {}
         assert result.agent_name == ""
         assert result.poi_name == ""
+
+
+class TestYouTubeAgent:
+    """Tests for YouTube Agent."""
+
+    @pytest.fixture
+    def youtube_agent(self):
+        """Create YouTube agent."""
+        return YouTubeAgent()
+
+    @pytest.fixture
+    def sample_poi(self):
+        """Create sample POI for testing."""
+        return POI(
+            name="Latrun Monastery",
+            lat=31.8356,
+            lon=34.9869,
+            description="Historic Trappist monastery with scenic views",
+            category=POICategory.RELIGIOUS,
+            distance_from_start_km=25.0,
+        )
+
+    @pytest.fixture
+    def mock_youtube_response(self):
+        """Mock Claude response with video suggestion."""
+        return """```json
+{
+  "video": {
+    "title": "Inside Latrun Monastery: A Journey Through Trappist Life",
+    "channel": "Sacred Sites",
+    "duration_estimate": "15 minutes",
+    "relevance_score": 90,
+    "description": "Explore the daily life of Trappist monks at Latrun Monastery",
+    "why_relevant": "Provides insight into the monastery's history and significance"
+  }
+}
+```"""
+
+    def test_youtube_agent_initialization(self, youtube_agent):
+        """Test that YouTube agent initializes correctly."""
+        assert youtube_agent.agent_name == "youtube"
+
+    def test_run_with_valid_poi(self, youtube_agent, sample_poi, mock_youtube_response):
+        """Test finding video for POI."""
+        with patch("tour_guide.agents.youtube.call_claude") as mock_claude:
+            mock_claude.return_value = mock_youtube_response
+
+            result = youtube_agent.run(sample_poi)
+
+            assert isinstance(result, ContentResult)
+            assert result.content_type == "youtube"
+            assert result.title == "Inside Latrun Monastery: A Journey Through Trappist Life"
+            assert result.relevance_score == 90
+            assert result.metadata["channel"] == "Sacred Sites"
+            assert result.metadata["duration_estimate"] == "15 minutes"
+            assert result.poi_name == "Latrun Monastery"
+
+    def test_run_with_invalid_input(self, youtube_agent):
+        """Test that invalid input raises AgentError."""
+        with pytest.raises(AgentError) as exc_info:
+            youtube_agent.run("not a poi")
+
+        assert "Expected POI object" in str(exc_info.value)
+
+    def test_parse_response_success(self, youtube_agent, mock_youtube_response):
+        """Test parsing valid Claude response."""
+        result = youtube_agent._parse_response(mock_youtube_response, "Latrun Monastery")
+
+        assert result.title == "Inside Latrun Monastery: A Journey Through Trappist Life"
+        assert result.content_type == "youtube"
+        assert result.relevance_score == 90
+
+    def test_parse_response_invalid_json(self, youtube_agent):
+        """Test parsing invalid JSON raises error."""
+        with pytest.raises(AgentError) as exc_info:
+            youtube_agent._parse_response("not valid json", "Test")
+
+        assert "Failed to parse" in str(exc_info.value)
+
+    def test_parse_response_missing_video_field(self, youtube_agent):
+        """Test response missing video field raises error."""
+        response = '{"wrong_field": {}}'
+
+        with pytest.raises(AgentError) as exc_info:
+            youtube_agent._parse_response(response, "Test")
+
+        assert "missing 'video' field" in str(exc_info.value)
+
+    def test_run_handles_claude_error(self, youtube_agent, sample_poi):
+        """Test that Claude errors are handled properly."""
+        from tour_guide.utils.claude_cli import ClaudeError
+
+        with patch("tour_guide.agents.youtube.call_claude") as mock_claude:
+            mock_claude.side_effect = ClaudeError("CLI failed")
+
+            with pytest.raises(AgentError) as exc_info:
+                youtube_agent.run(sample_poi)
+
+            assert "Claude CLI failed" in str(exc_info.value)
