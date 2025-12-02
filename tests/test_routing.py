@@ -239,3 +239,190 @@ class TestClaudeFallbackRouter:
                 get_route_from_claude(origin, destination)
 
             assert "Claude CLI error" in str(exc_info.value)
+
+
+class TestGeocoder:
+    """Tests for geocoding."""
+
+    def test_geocode_known_location(self):
+        """Test geocoding a known location."""
+        from tour_guide.routing.geocoder import geocode
+
+        coords = geocode("Tel Aviv")
+        assert coords == (32.0853, 34.7818)
+
+    def test_geocode_case_insensitive(self):
+        """Test that geocoding is case-insensitive."""
+        from tour_guide.routing.geocoder import geocode
+
+        coords1 = geocode("jerusalem")
+        coords2 = geocode("Jerusalem")
+        coords3 = geocode("JERUSALEM")
+
+        assert coords1 == coords2 == coords3
+
+    def test_geocode_unknown_location(self):
+        """Test that unknown locations raise ValueError."""
+        from tour_guide.routing.geocoder import geocode
+
+        with pytest.raises(ValueError) as exc_info:
+            geocode("Unknown City")
+
+        assert "Unknown location" in str(exc_info.value)
+
+
+class TestRoutePlanner:
+    """Tests for route planner."""
+
+    @pytest.fixture
+    def planner(self):
+        """Create route planner instance."""
+        from tour_guide.routing.planner import RoutePlanner
+
+        return RoutePlanner()
+
+    @pytest.fixture
+    def mock_osrm_response(self):
+        """Mock successful OSRM response."""
+        return {
+            "code": "Ok",
+            "routes": [
+                {
+                    "distance": 65000,
+                    "duration": 4500,
+                    "geometry": {
+                        "coordinates": [
+                            [34.7818, 32.0853],
+                            [35.0, 32.0],
+                            [35.2137, 31.7683],
+                        ]
+                    },
+                    "legs": [
+                        {
+                            "steps": [
+                                {
+                                    "name": "Highway 1",
+                                    "distance": 30000,
+                                    "duration": 2000,
+                                    "maneuver": {"type": "turn"},
+                                },
+                                {
+                                    "name": "Road 443",
+                                    "distance": 35000,
+                                    "duration": 2500,
+                                },
+                            ]
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def test_plan_route_with_coordinates(self, planner, mock_osrm_response):
+        """Test planning route with coordinate tuples."""
+        with patch("requests.get") as mock_get:
+            mock_get.return_value.json.return_value = mock_osrm_response
+            mock_get.return_value.raise_for_status = Mock()
+
+            origin = (32.0853, 34.7818)
+            destination = (31.7683, 35.2137)
+
+            route = planner.plan_route(origin, destination)
+
+            assert isinstance(route, Route)
+            assert route.origin == origin
+            assert route.destination == destination
+            assert route.source == "osrm"
+
+    def test_plan_route_with_place_names(self, planner, mock_osrm_response):
+        """Test planning route with place names."""
+        with patch("requests.get") as mock_get:
+            mock_get.return_value.json.return_value = mock_osrm_response
+            mock_get.return_value.raise_for_status = Mock()
+
+            route = planner.plan_route("Tel Aviv", "Jerusalem")
+
+            assert isinstance(route, Route)
+            assert route.origin == (32.0853, 34.7818)
+            assert route.destination == (31.7683, 35.2137)
+            assert route.source == "osrm"
+
+    def test_plan_route_osrm_fails_fallback_to_claude(self, planner):
+        """Test that planner falls back to Claude when OSRM fails."""
+        claude_response = """```json
+{
+  "distance_km": 65.0,
+  "duration_minutes": 75.0,
+  "waypoints": [
+    {"lat": 32.0853, "lon": 34.7818, "distance_from_start_km": 0.0},
+    {"lat": 31.7683, "lon": 35.2137, "distance_from_start_km": 65.0}
+  ],
+  "steps": [
+    {"instruction": "Head east on Highway 1", "distance_km": 65.0, "duration_min": 75.0}
+  ]
+}
+```"""
+
+        with patch("requests.get") as mock_get, patch(
+            "tour_guide.routing.fallback.call_claude"
+        ) as mock_claude:
+            # OSRM fails
+            import requests
+
+            mock_get.side_effect = requests.Timeout()
+
+            # Claude succeeds
+            mock_claude.return_value = claude_response
+
+            origin = (32.0853, 34.7818)
+            destination = (31.7683, 35.2137)
+
+            route = planner.plan_route(origin, destination)
+
+            assert isinstance(route, Route)
+            assert route.source == "claude"
+            assert route.total_distance_km == 65.0
+
+    def test_plan_route_both_fail(self, planner):
+        """Test that planner raises RoutingError when both OSRM and Claude fail."""
+        from tour_guide.routing.planner import RoutingError
+
+        with patch("requests.get") as mock_get, patch(
+            "tour_guide.routing.fallback.call_claude"
+        ) as mock_claude:
+            # OSRM fails
+            import requests
+
+            mock_get.side_effect = requests.Timeout()
+
+            # Claude fails
+            mock_claude.return_value = "Invalid response"
+
+            origin = (32.0853, 34.7818)
+            destination = (31.7683, 35.2137)
+
+            with pytest.raises(RoutingError) as exc_info:
+                planner.plan_route(origin, destination)
+
+            assert "Both OSRM and Claude routing failed" in str(exc_info.value)
+
+    def test_plan_route_fallback_disabled(self, planner, mock_osrm_response):
+        """Test that planner respects fallback_to_claude setting."""
+        from tour_guide.routing.planner import RoutingError
+
+        # Disable fallback
+        planner.config.fallback_to_claude = False
+
+        with patch("requests.get") as mock_get:
+            # OSRM fails
+            import requests
+
+            mock_get.side_effect = requests.Timeout()
+
+            origin = (32.0853, 34.7818)
+            destination = (31.7683, 35.2137)
+
+            with pytest.raises(RoutingError) as exc_info:
+                planner.plan_route(origin, destination)
+
+            assert "Claude fallback disabled" in str(exc_info.value)
