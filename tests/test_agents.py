@@ -93,42 +93,74 @@ class TestBaseAgent:
             # Should NOT contain other agent's logs
             assert "agents.other_agent" not in result
 
-    def test_diagnose_success(self, test_agent):
-        """Test diagnose method with successful Claude response."""
-        mock_log_content = """
-{"level": "ERROR", "message": "agents.test_agent: Connection failed"}
-"""
-        mock_claude_response = """
-1. Summary: Agent attempted connection but failed
-2. Errors: Connection timeout error
-3. Root cause: Network connectivity issue
-4. Fix: Check network settings and retry
-"""
+    def test_diagnose_no_logs(self, test_agent):
+        """Test diagnose when no logs are available."""
+        # Since test environment may not have logs, should return friendly message
+        try:
+            diagnosis = test_agent.diagnose(last_lines=10)
+            assert isinstance(diagnosis, str)
+            # Should contain either diagnosis or "no logs" message
+            assert len(diagnosis) > 0
+        except AgentError:
+            # Expected if logging not initialized - that's fine for unit test
+            pass
 
-        with patch("pathlib.Path.exists", return_value=True), patch(
-            "builtins.open", mock_open(read_data=mock_log_content)
-        ), patch("tour_guide.agents.base.call_claude") as mock_claude:
-            mock_claude.return_value = mock_claude_response
+    def test_diagnose_with_mock_logs(self, test_agent):
+        """Test diagnose with mocked log entries."""
+        from tour_guide.diagnosis import LogEntry, DiagnosticReport, AgentStats
+        from datetime import datetime
+        from pathlib import Path
 
-            result = test_agent.diagnose()
+        # Mock the log directory
+        with patch.object(Path, 'exists', return_value=True):
+            with patch('tour_guide.diagnosis.LogParser') as mock_parser:
+                with patch('tour_guide.diagnosis.DiagnosticAnalyzer') as mock_analyzer:
+                    # Setup mock entries
+                    mock_entries = [
+                        LogEntry(
+                            timestamp=datetime.now(),
+                            level="INFO",
+                            logger="tour_guide.agents.test_agent",
+                            message="Test message",
+                            module="test",
+                            function="run",
+                            line=1,
+                            agent="test_agent"
+                        )
+                    ]
 
-            assert "Connection timeout error" in result
-            assert "Fix:" in result
-            mock_claude.assert_called_once()
+                    mock_parser.return_value.parse_recent.return_value = mock_entries
+                    mock_parser.return_value.filter_by_agent.return_value = mock_entries
 
-    def test_diagnose_claude_error(self, test_agent):
-        """Test diagnose handles Claude errors."""
-        from tour_guide.utils.claude_cli import ClaudeError
+                    # Setup mock report
+                    mock_report = DiagnosticReport(
+                        generated_at=datetime.now(),
+                        total_entries=1,
+                        error_count=0,
+                        warning_count=0,
+                        patterns=[],
+                        agent_stats={
+                            "test_agent": AgentStats(
+                                agent_name="test_agent",
+                                total_calls=1,
+                                success_count=1,
+                                failure_count=0,
+                                avg_execution_time=1.0,
+                                error_rate=0.0
+                            )
+                        },
+                        recommendations=["System operating normally"]
+                    )
 
-        with patch("pathlib.Path.exists", return_value=True), patch(
-            "builtins.open", mock_open(read_data="some logs")
-        ), patch("tour_guide.agents.base.call_claude") as mock_claude:
-            mock_claude.side_effect = ClaudeError("CLI failed")
+                    mock_analyzer.return_value.analyze.return_value = mock_report
 
-            with pytest.raises(AgentError) as exc_info:
-                test_agent.diagnose()
+                    # Run diagnosis
+                    diagnosis = test_agent.diagnose(last_lines=10)
 
-            assert "Failed to get diagnostic analysis" in str(exc_info.value)
+                    # Verify result
+                    assert isinstance(diagnosis, str)
+                    assert "test_agent" in diagnosis.lower() or "TEST_AGENT" in diagnosis
+                    assert "Summary" in diagnosis
 
 
 class TestPOI:

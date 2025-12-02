@@ -88,12 +88,18 @@ class BaseAgent(ABC):
             )
             raise
 
-    def diagnose(self) -> str:
+    def diagnose(self, last_lines: int = 50) -> str:
         """
-        Read recent logs and use Claude to analyze any issues.
+        Analyze recent logs for this agent and identify issues.
+
+        Uses the diagnostic analyzer to detect patterns, calculate statistics,
+        and provide actionable recommendations.
+
+        Args:
+            last_lines: Number of recent log lines to analyze
 
         Returns:
-            Diagnostic analysis from Claude
+            Human-readable diagnostic report
 
         Raises:
             AgentError: If diagnosis fails
@@ -101,37 +107,104 @@ class BaseAgent(ABC):
         self.logger.info(f"Running diagnostics for {self.agent_name}")
 
         try:
-            # Read recent logs
-            recent_logs = self._read_recent_logs(lines=50)
+            from tour_guide.diagnosis import LogParser, DiagnosticAnalyzer
 
-            # Ask Claude to analyze
-            prompt = f"""Analyze the following logs from the {self.agent_name} agent and identify any issues or problems.
+            # Get log directory
+            import logging
+            from logging.handlers import RotatingFileHandler
 
-Logs:
-{recent_logs}
+            root_logger = logging.getLogger("tour_guide")
+            log_dir = None
 
-Provide:
-1. Summary of what the agent was doing
-2. Any errors or warnings found
-3. Root cause analysis if errors present
-4. Recommended fixes
+            for handler in root_logger.handlers:
+                if isinstance(handler, RotatingFileHandler):
+                    log_file = Path(handler.baseFilename)
+                    log_dir = log_file.parent
+                    break
 
-Be concise and actionable."""
+            if log_dir is None:
+                return "No log directory found. Unable to run diagnostics."
 
-            analysis = call_claude(prompt, timeout=30)
+            # Parse recent logs
+            parser = LogParser()
+            all_entries = parser.parse_recent(log_dir, hours=24)
+
+            # Filter to this agent's logs
+            agent_entries = parser.filter_by_agent(all_entries, self.agent_name)
+
+            # Limit to last N entries
+            agent_entries = agent_entries[-last_lines:] if len(agent_entries) > last_lines else agent_entries
+
+            if not agent_entries:
+                return f"No recent log entries found for {self.agent_name} agent."
+
+            # Analyze logs
+            analyzer = DiagnosticAnalyzer()
+            report = analyzer.analyze(agent_entries)
+
+            # Format report as human-readable text
+            diagnosis = self._format_diagnostic_report(report)
 
             self.logger.info(f"Diagnostics completed for {self.agent_name}")
-            return analysis
-
-        except ClaudeError as e:
-            error_msg = f"Failed to get diagnostic analysis from Claude: {e}"
-            self.logger.error(error_msg)
-            raise AgentError(error_msg)
+            return diagnosis
 
         except Exception as e:
             error_msg = f"Diagnostic analysis failed: {e}"
             self.logger.error(error_msg)
             raise AgentError(error_msg)
+
+    def _format_diagnostic_report(self, report) -> str:
+        """
+        Format diagnostic report as human-readable text.
+
+        Args:
+            report: DiagnosticReport object
+
+        Returns:
+            Formatted report string
+        """
+        lines = []
+        lines.append(f"\n🔍 Diagnostic Report for {self.agent_name.upper()} Agent")
+        lines.append("=" * 60)
+        lines.append("")
+
+        # Summary
+        lines.append("📊 Summary:")
+        lines.append(f"   Total log entries: {report.total_entries}")
+        lines.append(f"   Errors: {report.error_count}")
+        lines.append(f"   Warnings: {report.warning_count}")
+        lines.append("")
+
+        # Agent statistics
+        if self.agent_name.lower() in report.agent_stats:
+            stats = report.agent_stats[self.agent_name.lower()]
+            lines.append("📈 Statistics:")
+            lines.append(f"   Total calls: {stats.total_calls}")
+            lines.append(f"   Successful: {stats.success_count}")
+            lines.append(f"   Failed: {stats.failure_count}")
+            lines.append(f"   Error rate: {stats.error_rate:.1%}")
+            if stats.avg_execution_time > 0:
+                lines.append(f"   Avg execution time: {stats.avg_execution_time:.2f}s")
+            lines.append("")
+
+        # Patterns detected
+        if report.patterns:
+            lines.append("⚠️  Patterns Detected:")
+            for pattern in report.patterns:
+                severity_emoji = "🔴" if pattern.severity == "high" else "🟡"
+                lines.append(f"   {severity_emoji} {pattern.description}")
+            lines.append("")
+
+        # Recommendations
+        if report.recommendations:
+            lines.append("💡 Recommendations:")
+            for i, rec in enumerate(report.recommendations, 1):
+                lines.append(f"   {i}. {rec}")
+            lines.append("")
+
+        lines.append("=" * 60)
+
+        return "\n".join(lines)
 
     def _read_recent_logs(self, lines: int = 50) -> str:
         """
