@@ -1,10 +1,8 @@
 """Main orchestrator for Tour Guide system."""
 
 import time
-import logging
 from dataclasses import dataclass
 from typing import List, Dict, Optional
-from pathlib import Path
 
 from tour_guide.routing.osrm import OSRMClient
 from tour_guide.routing.models import Route

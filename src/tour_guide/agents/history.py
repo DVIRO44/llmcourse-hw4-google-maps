@@ -43,7 +43,7 @@ class HistoryAgent(BaseAgent):
 
         try:
             # Call Claude
-            self.logger.debug(f"Requesting historical narrative from Claude")
+            self.logger.debug("Requesting historical narrative from Claude")
             response = call_claude(prompt, timeout=45)  # Longer timeout for narrative
 
             # Parse response

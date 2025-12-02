@@ -43,7 +43,7 @@ class YouTubeAgent(BaseAgent):
 
         try:
             # Call Claude
-            self.logger.debug(f"Requesting video suggestion from Claude")
+            self.logger.debug("Requesting video suggestion from Claude")
             response = call_claude(prompt, timeout=30)
 
             # Parse response

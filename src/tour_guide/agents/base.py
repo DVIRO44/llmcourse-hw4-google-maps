@@ -5,7 +5,6 @@ from typing import Any
 import time
 from pathlib import Path
 from tour_guide.logging import get_logger
-from tour_guide.utils.claude_cli import call_claude, ClaudeError
 from tour_guide.config import get_settings
 
 
@@ -230,7 +229,7 @@ class BaseAgent(ABC):
                     break
 
             if log_file is None or not log_file.exists():
-                return f"No log file found"
+                return "No log file found"
 
             # Read last N lines from log file
             with open(log_file, "r") as f:

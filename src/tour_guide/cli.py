@@ -132,13 +132,13 @@ def run(origin, destination, json_output, markdown_output, no_delay):
         if markdown_output:
             lines = []
             lines.append(f"# Journey: {origin} → {destination}\n")
-            lines.append(f"## Route Information\n")
+            lines.append("## Route Information\n")
             lines.append(f"- **Distance**: {result.route.total_distance_km:.1f} km")
             lines.append(f"- **Duration**: {result.route.total_duration_min:.1f} minutes")
             lines.append(f"- **POIs Found**: {len(result.pois)}\n")
 
             if result.pois:
-                lines.append(f"## Points of Interest\n")
+                lines.append("## Points of Interest\n")
                 for i, poi in enumerate(result.pois, 1):
                     lines.append(f"### {i}. {poi.name}")
                     lines.append(f"**Category**: {poi.category.value}")
@@ -150,7 +150,7 @@ def run(origin, destination, json_output, markdown_output, no_delay):
                         lines.append(f"**Selected Content**: {judgment.selected_type}")
                         lines.append(f"**Reasoning**: {judgment.reasoning}\n")
 
-            lines.append(f"## Statistics\n")
+            lines.append("## Statistics\n")
             lines.append(f"- **Total POIs**: {result.stats['total_pois']}")
             lines.append(f"- **Judgments**: {result.stats['total_judgments']}")
             lines.append(f"- **Success Rate**: {result.stats['success_rate']:.0%}")
@@ -259,7 +259,6 @@ def demo():
 @click.option("--hours", type=int, default=24, help="Hours of logs to analyze")
 def diagnose(agent, last, hours):
     """Analyze logs and identify issues."""
-    from pathlib import Path
     from rich.console import Console
     from rich.table import Table
     from rich.panel import Panel
@@ -304,7 +303,7 @@ def diagnose(agent, last, hours):
         console.print()
 
         # Title
-        title = f"🔍 Diagnostic Report"
+        title = "🔍 Diagnostic Report"
         if agent:
             title += f" - {agent.upper()} Agent"
         console.print(Panel(title, style="bold cyan", box=box.DOUBLE))

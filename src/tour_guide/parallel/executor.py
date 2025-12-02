@@ -2,7 +2,6 @@
 
 import logging
 import time
-from multiprocessing import Pool
 from typing import List, Dict
 from tour_guide.models.poi import POI
 from tour_guide.models.content import ContentResult

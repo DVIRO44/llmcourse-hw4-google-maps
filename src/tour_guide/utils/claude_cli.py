@@ -1,7 +1,6 @@
 """Claude CLI wrapper for making LLM calls."""
 
 import subprocess
-from typing import Optional
 from tour_guide.logging import get_logger
 
 logger = get_logger("utils.claude_cli")

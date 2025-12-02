@@ -4,7 +4,6 @@ IMPORTANT: Worker functions must be at module level (not nested) for multiproces
 """
 
 import logging
-from typing import Dict, Any
 from tour_guide.models.poi import POI
 from tour_guide.models.content import ContentResult
 from tour_guide.agents.youtube import YouTubeAgent

@@ -3,7 +3,6 @@
 import logging
 from typing import List, Dict
 from tour_guide.models.poi import POI
-from tour_guide.models.content import ContentResult
 from tour_guide.models.judgment import JudgmentResult
 from tour_guide.queue.manager import QueueManager
 from tour_guide.parallel.executor import ParallelExecutor

@@ -43,7 +43,7 @@ class SpotifyAgent(BaseAgent):
 
         try:
             # Call Claude
-            self.logger.debug(f"Requesting music suggestion from Claude")
+            self.logger.debug("Requesting music suggestion from Claude")
             response = call_claude(prompt, timeout=30)
 
             # Parse response

@@ -4,7 +4,7 @@ import json
 from typing import List
 from tour_guide.agents.base import BaseAgent, AgentError
 from tour_guide.routing.models import Route
-from tour_guide.models import POI, POICategory
+from tour_guide.models import POI
 from tour_guide.utils.claude_cli import call_claude, ClaudeError
 from tour_guide.skills.route_analyzer_skill import format_route_analyzer_prompt
 
