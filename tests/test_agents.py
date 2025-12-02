@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import Mock, patch, mock_open
 from tour_guide.agents.base import BaseAgent, AgentError
 from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
-from tour_guide.models import POI, POICategory
+from tour_guide.models import POI, POICategory, ContentResult
 from tour_guide.routing.models import Route, Waypoint, RouteStep
 
 
@@ -375,3 +375,61 @@ class TestRouteAnalyzerAgent:
                 analyzer.run(sample_route)
 
             assert "Claude CLI failed" in str(exc_info.value)
+
+
+class TestContentResult:
+    """Tests for ContentResult model."""
+
+    def test_content_result_creation(self):
+        """Test creating a valid ContentResult."""
+        result = ContentResult(
+            content_type="youtube",
+            title="Test Video",
+            description="A test video about a location",
+            relevance_score=85,
+            metadata={"duration": "10:30", "channel": "Travel Guide"},
+            agent_name="youtube",
+            poi_name="Masada",
+        )
+
+        assert result.content_type == "youtube"
+        assert result.title == "Test Video"
+        assert result.relevance_score == 85
+        assert result.metadata["duration"] == "10:30"
+
+    def test_content_result_invalid_score(self):
+        """Test that invalid relevance score raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            ContentResult(
+                content_type="spotify",
+                title="Test",
+                description="Test",
+                relevance_score=150,  # > 100
+            )
+
+        assert "Invalid relevance_score" in str(exc_info.value)
+
+    def test_content_result_invalid_type(self):
+        """Test that invalid content type raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            ContentResult(
+                content_type="invalid",
+                title="Test",
+                description="Test",
+                relevance_score=50,
+            )
+
+        assert "Invalid content_type" in str(exc_info.value)
+
+    def test_content_result_default_metadata(self):
+        """Test that metadata defaults to empty dict."""
+        result = ContentResult(
+            content_type="history",
+            title="Test",
+            description="Test",
+            relevance_score=75,
+        )
+
+        assert result.metadata == {}
+        assert result.agent_name == ""
+        assert result.poi_name == ""
