@@ -3,7 +3,9 @@
 import pytest
 from unittest.mock import Mock, patch, mock_open
 from tour_guide.agents.base import BaseAgent, AgentError
+from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
 from tour_guide.models import POI, POICategory
+from tour_guide.routing.models import Route, Waypoint, RouteStep
 
 
 class TestBaseAgent:
@@ -226,3 +228,150 @@ class TestPOI:
             )
 
         assert "Invalid category" in str(exc_info.value)
+
+
+class TestRouteAnalyzerAgent:
+    """Tests for Route Analyzer Agent."""
+
+    @pytest.fixture
+    def analyzer(self):
+        """Create route analyzer agent."""
+        return RouteAnalyzerAgent()
+
+    @pytest.fixture
+    def sample_route(self):
+        """Create sample route for testing."""
+        return Route(
+            origin=(32.0853, 34.7818),  # Tel Aviv
+            destination=(31.7683, 35.2137),  # Jerusalem
+            total_distance_km=65.0,
+            total_duration_min=75.0,
+            waypoints=[
+                Waypoint(lat=32.0853, lon=34.7818, distance_from_start_km=0.0),
+                Waypoint(lat=32.0, lon=35.0, distance_from_start_km=30.0),
+                Waypoint(lat=31.7683, lon=35.2137, distance_from_start_km=65.0),
+            ],
+            steps=[
+                RouteStep(
+                    instruction="Head east on Highway 1",
+                    distance_km=30.0,
+                    duration_min=25.0,
+                )
+            ],
+            source="osrm",
+        )
+
+    @pytest.fixture
+    def mock_claude_response(self):
+        """Mock Claude response with POIs."""
+        return """```json
+{
+  "pois": [
+    {
+      "name": "Latrun Monastery",
+      "lat": 31.8356,
+      "lon": 34.9869,
+      "description": "Historic Trappist monastery with scenic views and wine production.",
+      "category": "religious",
+      "distance_from_start_km": 25.0
+    },
+    {
+      "name": "Mini Israel",
+      "lat": 31.8542,
+      "lon": 34.9869,
+      "description": "Miniature park featuring replicas of Israeli landmarks.",
+      "category": "entertainment",
+      "distance_from_start_km": 30.0
+    },
+    {
+      "name": "Emmaus Archaeological Site",
+      "lat": 31.8403,
+      "lon": 34.9869,
+      "description": "Ancient Roman and Byzantine ruins with historical significance.",
+      "category": "historical",
+      "distance_from_start_km": 35.0
+    }
+  ]
+}
+```"""
+
+    def test_analyzer_initialization(self, analyzer):
+        """Test that analyzer initializes correctly."""
+        assert analyzer.agent_name == "route_analyzer"
+        assert analyzer.poi_count == 10
+
+    def test_run_with_valid_route(self, analyzer, sample_route, mock_claude_response):
+        """Test analyzing route returns POI list."""
+        with patch(
+            "tour_guide.agents.route_analyzer.call_claude"
+        ) as mock_claude:
+            mock_claude.return_value = mock_claude_response
+
+            pois = analyzer.run(sample_route)
+
+            assert isinstance(pois, list)
+            assert len(pois) == 3
+            assert all(isinstance(poi, POI) for poi in pois)
+
+            # Check first POI
+            assert pois[0].name == "Latrun Monastery"
+            assert pois[0].category == POICategory.RELIGIOUS
+            assert pois[0].distance_from_start_km == 25.0
+
+    def test_run_with_invalid_input(self, analyzer):
+        """Test that invalid input raises AgentError."""
+        with pytest.raises(AgentError) as exc_info:
+            analyzer.run("not a route")
+
+        assert "Expected Route object" in str(exc_info.value)
+
+    def test_determine_poi_count_short_route(self, analyzer):
+        """Test POI count for short routes."""
+        assert analyzer._determine_poi_count(15.0) == 3
+
+    def test_determine_poi_count_medium_route(self, analyzer):
+        """Test POI count for medium routes."""
+        assert analyzer._determine_poi_count(40.0) == 5
+
+    def test_determine_poi_count_long_route(self, analyzer):
+        """Test POI count for long routes."""
+        assert analyzer._determine_poi_count(100.0) == 10
+
+    def test_parse_response_success(self, analyzer, mock_claude_response):
+        """Test parsing valid Claude response."""
+        pois = analyzer._parse_response(mock_claude_response)
+
+        assert len(pois) == 3
+        assert pois[0].name == "Latrun Monastery"
+        assert pois[1].name == "Mini Israel"
+        assert pois[2].name == "Emmaus Archaeological Site"
+
+    def test_parse_response_invalid_json(self, analyzer):
+        """Test parsing invalid JSON raises error."""
+        with pytest.raises(AgentError) as exc_info:
+            analyzer._parse_response("not valid json")
+
+        assert "Failed to parse" in str(exc_info.value)
+
+    def test_parse_response_missing_pois_field(self, analyzer):
+        """Test response missing pois field raises error."""
+        response = '{"wrong_field": []}'
+
+        with pytest.raises(AgentError) as exc_info:
+            analyzer._parse_response(response)
+
+        assert "missing 'pois' field" in str(exc_info.value)
+
+    def test_run_handles_claude_error(self, analyzer, sample_route):
+        """Test that Claude errors are handled properly."""
+        from tour_guide.utils.claude_cli import ClaudeError
+
+        with patch(
+            "tour_guide.agents.route_analyzer.call_claude"
+        ) as mock_claude:
+            mock_claude.side_effect = ClaudeError("CLI failed")
+
+            with pytest.raises(AgentError) as exc_info:
+                analyzer.run(sample_route)
+
+            assert "Claude CLI failed" in str(exc_info.value)
