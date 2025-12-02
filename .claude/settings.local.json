@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(uv sync:*)",
+      "Bash(curl:*)",
+      "Bash(sh)",
+      "Bash($HOME/.local/bin/uv sync:*)",
+      "Bash($HOME/.local/bin/uv run python:*)",
+      "Bash($HOME/.local/bin/uv run tour-guide --help)",
+      "Bash($HOME/.local/bin/uv run pytest tests/test_config.py -v)",
+      "Bash($HOME/.local/bin/uv pip install:*)",
+      "Bash($HOME/.local/bin/uv run pytest tests/test_logging.py -v)",
+      "Bash($HOME/.local/bin/uv run pytest tests/ -v)",
+      "Bash($HOME/.local/bin/uv run pytest tests/test_routing.py::TestOSRMClient -v)",
+      "Bash($HOME/.local/bin/uv run pytest tests/test_routing.py -v)",
+      "Bash($HOME/.local/bin/uv run pytest:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

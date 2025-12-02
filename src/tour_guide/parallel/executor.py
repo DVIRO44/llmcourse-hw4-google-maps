@@ -28,7 +28,7 @@ class ParallelExecutor:
             timeout: Timeout in seconds for each agent (uses config if not provided)
         """
         self.settings = get_settings()
-        self.timeout = timeout or self.settings.agents.get("content_timeout", 45)
+        self.timeout = timeout or self.settings.agents.content_timeout
         logger.info(f"ParallelExecutor initialized with timeout={self.timeout}s")
 
     def process_poi(self, poi: POI) -> List[ContentResult]:
