@@ -5,6 +5,7 @@ from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
 from tour_guide.agents.youtube import YouTubeAgent
 from tour_guide.agents.spotify import SpotifyAgent
 from tour_guide.agents.history import HistoryAgent
+from tour_guide.agents.judge import JudgeAgent
 
 __all__ = [
     "BaseAgent",
@@ -14,4 +15,5 @@ __all__ = [
     "YouTubeAgent",
     "SpotifyAgent",
     "HistoryAgent",
+    "JudgeAgent",
 ]

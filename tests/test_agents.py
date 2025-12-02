@@ -7,6 +7,7 @@ from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
 from tour_guide.agents.youtube import YouTubeAgent
 from tour_guide.agents.spotify import SpotifyAgent
 from tour_guide.agents.history import HistoryAgent
+from tour_guide.agents.judge import JudgeAgent
 from tour_guide.models import POI, POICategory, ContentResult, JudgmentResult
 from tour_guide.routing.models import Route, Waypoint, RouteStep
 
@@ -779,4 +780,207 @@ class TestJudgmentResult:
             )
 
         assert "Mismatch" in str(exc_info.value)
+
+
+class TestJudgeAgent:
+    """Tests for JudgeAgent class."""
+
+    @pytest.fixture
+    def judge_agent(self):
+        """Create a JudgeAgent instance."""
+        return JudgeAgent()
+
+    @pytest.fixture
+    def sample_content_list(self):
+        """Create sample content list with all three types."""
+        return [
+            ContentResult(
+                content_type="youtube",
+                title="Amazing Video Tour",
+                description="A video tour of the location",
+                relevance_score=85,
+                agent_name="youtube",
+                poi_name="Eiffel Tower",
+            ),
+            ContentResult(
+                content_type="spotify",
+                title="French Music Playlist",
+                description="Traditional French music",
+                relevance_score=75,
+                agent_name="spotify",
+                poi_name="Eiffel Tower",
+            ),
+            ContentResult(
+                content_type="history",
+                title="History of Eiffel Tower",
+                description="Built in 1889 for the World's Fair...",
+                relevance_score=95,
+                agent_name="history",
+                poi_name="Eiffel Tower",
+            ),
+        ]
+
+    def test_judge_agent_initialization(self, judge_agent):
+        """Test that JudgeAgent initializes correctly."""
+        assert judge_agent.agent_name == "judge"
+        assert judge_agent.logger is not None
+
+    def test_judge_agent_empty_list(self, judge_agent):
+        """Test that empty content list raises AgentError."""
+        with pytest.raises(AgentError) as exc_info:
+            judge_agent.run([])
+
+        assert "empty content list" in str(exc_info.value)
+
+    def test_judge_agent_invalid_input_type(self, judge_agent):
+        """Test that non-list input raises AgentError."""
+        with pytest.raises(AgentError) as exc_info:
+            judge_agent.run("not a list")
+
+        assert "must be a list" in str(exc_info.value)
+
+    def test_judge_agent_invalid_content_items(self, judge_agent):
+        """Test that invalid items in list raise AgentError."""
+        with pytest.raises(AgentError) as exc_info:
+            judge_agent.run([{"not": "content_result"}])
+
+        assert "ContentResult objects" in str(exc_info.value)
+
+    def test_judge_agent_single_content(self, judge_agent):
+        """Test that single content item is selected by default."""
+        single_content = [
+            ContentResult(
+                content_type="youtube",
+                title="Test Video",
+                description="Test",
+                relevance_score=80,
+                agent_name="youtube",
+                poi_name="Test POI",
+            )
+        ]
+
+        result = judge_agent.run(single_content)
+
+        assert isinstance(result, JudgmentResult)
+        assert result.selected_type == "youtube"
+        assert result.selected_content == single_content[0]
+        assert "by default" in result.reasoning
+
+    @patch("tour_guide.agents.judge.call_claude")
+    def test_judge_agent_evaluates_content(self, mock_claude, judge_agent, sample_content_list):
+        """Test that JudgeAgent successfully evaluates multiple content options."""
+        # Mock Claude response
+        mock_response = """```json
+{
+  "selected": "history",
+  "reasoning": "The historical narrative provides the most educational value and is specifically relevant to the Eiffel Tower's significance.",
+  "scores": {
+    "youtube": 82,
+    "spotify": 68,
+    "history": 94
+  }
+}
+```"""
+        mock_claude.return_value = mock_response
+
+        result = judge_agent.run(sample_content_list)
+
+        assert isinstance(result, JudgmentResult)
+        assert result.selected_type == "history"
+        assert result.selected_content.content_type == "history"
+        assert result.poi_name == "Eiffel Tower"
+        assert "educational value" in result.reasoning
+        assert result.scores["history"] == 94
+        assert len(result.all_content) == 3
+
+    @patch("tour_guide.agents.judge.call_claude")
+    def test_judge_agent_fallback_on_claude_failure(self, mock_claude, judge_agent, sample_content_list):
+        """Test that JudgeAgent uses fallback selection when Claude fails."""
+        mock_claude.side_effect = Exception("Claude call failed")
+
+        result = judge_agent.run(sample_content_list)
+
+        assert isinstance(result, JudgmentResult)
+        # Should select history (highest score: 95)
+        assert result.selected_type == "history"
+        assert "highest relevance score" in result.reasoning
+
+    @patch("tour_guide.agents.judge.call_claude")
+    def test_judge_agent_fallback_on_invalid_json(self, mock_claude, judge_agent, sample_content_list):
+        """Test that JudgeAgent uses fallback when JSON parsing fails."""
+        mock_claude.return_value = "This is not valid JSON"
+
+        result = judge_agent.run(sample_content_list)
+
+        assert isinstance(result, JudgmentResult)
+        assert result.selected_type == "history"
+        assert "highest relevance score" in result.reasoning
+
+    @patch("tour_guide.agents.judge.call_claude")
+    def test_judge_agent_fallback_on_missing_fields(self, mock_claude, judge_agent, sample_content_list):
+        """Test that JudgeAgent uses fallback when response is missing fields."""
+        mock_response = """```json
+{
+  "scores": {"youtube": 80, "spotify": 70, "history": 90}
+}
+```"""
+        mock_claude.return_value = mock_response
+
+        result = judge_agent.run(sample_content_list)
+
+        assert isinstance(result, JudgmentResult)
+        assert "highest relevance score" in result.reasoning
+
+    @patch("tour_guide.agents.judge.call_claude")
+    def test_judge_agent_fallback_on_invalid_selection(self, mock_claude, judge_agent, sample_content_list):
+        """Test fallback when selected type doesn't match available content."""
+        mock_response = """```json
+{
+  "selected": "podcast",
+  "reasoning": "Podcasts are great",
+  "scores": {"youtube": 80, "spotify": 70, "history": 90}
+}
+```"""
+        mock_claude.return_value = mock_response
+
+        result = judge_agent.run(sample_content_list)
+
+        assert isinstance(result, JudgmentResult)
+        assert result.selected_type in ["youtube", "spotify", "history"]
+        assert "highest relevance score" in result.reasoning
+
+    def test_judge_agent_tiebreaker_priority(self, judge_agent):
+        """Test that tiebreaker uses correct priority: History > YouTube > Spotify."""
+        # All have same score, should pick History
+        tied_content = [
+            ContentResult(
+                content_type="youtube",
+                title="Video",
+                description="Video desc",
+                relevance_score=80,
+                agent_name="youtube",
+                poi_name="Test POI",
+            ),
+            ContentResult(
+                content_type="spotify",
+                title="Music",
+                description="Music desc",
+                relevance_score=80,
+                agent_name="spotify",
+                poi_name="Test POI",
+            ),
+            ContentResult(
+                content_type="history",
+                title="History",
+                description="History desc",
+                relevance_score=80,
+                agent_name="history",
+                poi_name="Test POI",
+            ),
+        ]
+
+        result = judge_agent.run(tied_content)
+
+        # With equal scores, history should be selected
+        assert result.selected_type == "history"
 
