@@ -1,0 +1,3 @@
+"""Markdown generator."""
+
+# Placeholder
