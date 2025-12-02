@@ -16,7 +16,8 @@
       "Bash($HOME/.local/bin/uv run pytest tests/ -v)",
       "Bash($HOME/.local/bin/uv run pytest tests/test_routing.py::TestOSRMClient -v)",
       "Bash($HOME/.local/bin/uv run pytest tests/test_routing.py -v)",
-      "Bash($HOME/.local/bin/uv run pytest:*)"
+      "Bash($HOME/.local/bin/uv run pytest:*)",
+      "Bash($HOME/.local/bin/uv run:*)"
     ],
     "deny": [],
     "ask": []

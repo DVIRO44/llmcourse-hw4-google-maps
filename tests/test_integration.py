@@ -2,10 +2,14 @@
 
 import pytest
 import time
+from unittest.mock import patch, MagicMock
 from tour_guide.parallel.pipeline import ContentPipeline
 from tour_guide.queue.manager import QueueManager
 from tour_guide.models.poi import POI, POICategory
 from tour_guide.models.judgment import JudgmentResult
+from tour_guide.models.content import ContentResult
+from tour_guide.orchestrator import TourGuideOrchestrator, JourneyResult
+from tour_guide.routing.models import Route, Waypoint, RouteStep
 
 
 class TestQueuePipeline:
@@ -231,3 +235,267 @@ class TestPipelinePerformance:
         # So time should be close to the time of the slowest agent, not 3x
         # This is a rough check - we just verify it completes in reasonable time
         assert parallel_time < 60, f"Single POI took {parallel_time}s, expected < 60s"
+
+
+class TestOrchestrator:
+    """Integration tests for TourGuideOrchestrator."""
+
+    @pytest.fixture
+    def orchestrator(self):
+        """Create orchestrator instance."""
+        return TourGuideOrchestrator()
+
+    @pytest.fixture
+    def mock_route(self):
+        """Create a mock route."""
+        return Route(
+            origin=(32.0853, 34.7818),  # Tel Aviv
+            destination=(31.7683, 35.2137),  # Jerusalem
+            total_distance_km=65.0,
+            total_duration_min=55.0,
+            waypoints=[
+                Waypoint(lat=32.0853, lon=34.7818, distance_from_start_km=0.0),
+                Waypoint(lat=31.8356, lon=34.9869, distance_from_start_km=30.0),
+                Waypoint(lat=31.7683, lon=35.2137, distance_from_start_km=65.0),
+            ],
+            steps=[
+                RouteStep(instruction="Head east", distance_km=30.0, duration_min=25.0),
+                RouteStep(instruction="Continue to Jerusalem", distance_km=35.0, duration_min=30.0),
+            ],
+            source="osrm",
+        )
+
+    @pytest.fixture
+    def mock_pois(self):
+        """Create mock POIs."""
+        return [
+            POI(
+                name="Latrun Monastery",
+                lat=31.8356,
+                lon=34.9869,
+                description="Historic Trappist monastery",
+                category=POICategory.RELIGIOUS,
+                distance_from_start_km=25.0,
+            ),
+            POI(
+                name="Mini Israel",
+                lat=31.8514,
+                lon=34.9891,
+                description="Miniature park",
+                category=POICategory.CULTURAL,
+                distance_from_start_km=28.0,
+            ),
+        ]
+
+    @pytest.fixture
+    def mock_judgments(self, mock_pois):
+        """Create mock judgments."""
+        judgments = []
+        for poi in mock_pois:
+            # Create content options
+            youtube_content = ContentResult(
+                content_type="youtube",
+                title=f"Video about {poi.name}",
+                description="Great video",
+                relevance_score=90,
+                metadata={"url": "https://youtube.com/test"},
+                agent_name="youtube_agent",
+                poi_name=poi.name,
+            )
+            spotify_content = ContentResult(
+                content_type="spotify",
+                title=f"Song about {poi.name}",
+                description="Great song",
+                relevance_score=80,
+                metadata={"url": "https://spotify.com/test"},
+                agent_name="spotify_agent",
+                poi_name=poi.name,
+            )
+            history_content = ContentResult(
+                content_type="history",
+                title=f"History of {poi.name}",
+                description="Historical info",
+                relevance_score=70,
+                agent_name="history_agent",
+                poi_name=poi.name,
+            )
+
+            judgment = JudgmentResult(
+                poi_name=poi.name,
+                selected_type="youtube",
+                selected_content=youtube_content,
+                reasoning="Great video content",
+                scores={"youtube": 90, "spotify": 80, "history": 70},
+                all_content=[youtube_content, spotify_content, history_content],
+            )
+            judgments.append(judgment)
+        return judgments
+
+    def test_orchestrator_initialization(self, orchestrator):
+        """Test orchestrator initializes all components."""
+        assert orchestrator.osrm_client is not None
+        assert orchestrator.route_analyzer is not None
+        assert orchestrator.content_pipeline is not None
+        assert orchestrator.logger is not None
+
+    def test_full_flow_tel_aviv_to_jerusalem(self, orchestrator, mock_route, mock_pois, mock_judgments):
+        """Test complete flow from Tel Aviv to Jerusalem."""
+        # Mock all the components
+        with patch.object(orchestrator.osrm_client, "get_route", return_value=mock_route):
+            with patch.object(orchestrator.route_analyzer, "run", return_value=mock_pois):
+                with patch.object(orchestrator.content_pipeline, "run", return_value=mock_judgments):
+                    # Run journey
+                    result = orchestrator.run("Tel Aviv", "Jerusalem")
+
+                    # Verify result structure
+                    assert isinstance(result, JourneyResult)
+                    assert result.route == mock_route
+                    assert len(result.pois) == 2
+                    assert len(result.judgments) == 2
+                    assert result.execution_time > 0
+
+                    # Verify stats
+                    assert result.stats["total_pois"] == 2
+                    assert result.stats["total_judgments"] == 2
+                    assert result.stats["success_rate"] == 1.0
+                    assert "content_distribution" in result.stats
+
+    def test_run_with_no_pois(self, orchestrator, mock_route):
+        """Test journey when no POIs are found."""
+        with patch.object(orchestrator.osrm_client, "get_route", return_value=mock_route):
+            with patch.object(orchestrator.route_analyzer, "run", return_value=[]):
+                result = orchestrator.run("Tel Aviv", "Jerusalem")
+
+                # Should still return valid result with empty data
+                assert isinstance(result, JourneyResult)
+                assert result.route == mock_route
+                assert len(result.pois) == 0
+                assert len(result.judgments) == 0
+                assert result.stats["total_pois"] == 0
+                assert result.stats["success_rate"] == 0.0
+
+    def test_error_handling_route_failure(self, orchestrator):
+        """Test error handling when route planning fails."""
+        with patch.object(orchestrator.osrm_client, "get_route", side_effect=Exception("Route error")):
+            with pytest.raises(Exception, match="Route error"):
+                orchestrator.run("Tel Aviv", "Jerusalem")
+
+    def test_error_handling_unknown_location(self, orchestrator):
+        """Test error handling with unknown location."""
+        # Should raise ValueError for unknown location
+        with pytest.raises(ValueError, match="Unknown location"):
+            orchestrator.run("Unknown City", "Jerusalem")
+
+    def test_error_handling_poi_analysis_failure(self, orchestrator, mock_route):
+        """Test graceful degradation when POI analysis fails."""
+        with patch.object(orchestrator.osrm_client, "get_route", return_value=mock_route):
+            with patch.object(orchestrator.route_analyzer, "run", side_effect=Exception("Analysis error")):
+                result = orchestrator.run("Tel Aviv", "Jerusalem")
+
+                # Should continue with empty POIs
+                assert isinstance(result, JourneyResult)
+                assert len(result.pois) == 0
+                assert len(result.judgments) == 0
+
+    def test_error_handling_content_pipeline_failure(self, orchestrator, mock_route, mock_pois):
+        """Test graceful degradation when content pipeline fails."""
+        with patch.object(orchestrator.osrm_client, "get_route", return_value=mock_route):
+            with patch.object(orchestrator.route_analyzer, "run", return_value=mock_pois):
+                with patch.object(orchestrator.content_pipeline, "run", side_effect=Exception("Pipeline error")):
+                    result = orchestrator.run("Tel Aviv", "Jerusalem")
+
+                    # Should continue with POIs but empty judgments
+                    assert isinstance(result, JourneyResult)
+                    assert len(result.pois) == 2
+                    assert len(result.judgments) == 0
+
+    def test_stats_calculation(self, orchestrator, mock_route, mock_pois):
+        """Test statistics calculation."""
+        youtube_content = ContentResult(
+            content_type="youtube",
+            title="Test video",
+            description="Test",
+            relevance_score=90,
+        )
+        spotify_content = ContentResult(
+            content_type="spotify",
+            title="Test song",
+            description="Test",
+            relevance_score=80,
+        )
+
+        judgments = [
+            JudgmentResult(
+                poi_name="POI 1",
+                selected_type="youtube",
+                selected_content=youtube_content,
+                reasoning="test",
+                scores={},
+                all_content=[youtube_content],
+            ),
+            JudgmentResult(
+                poi_name="POI 2",
+                selected_type="spotify",
+                selected_content=spotify_content,
+                reasoning="test",
+                scores={},
+                all_content=[spotify_content],
+            ),
+        ]
+
+        with patch.object(orchestrator.osrm_client, "get_route", return_value=mock_route):
+            with patch.object(orchestrator.route_analyzer, "run", return_value=mock_pois):
+                with patch.object(orchestrator.content_pipeline, "run", return_value=judgments):
+                    result = orchestrator.run("Tel Aviv", "Jerusalem")
+
+                    # Verify stats
+                    assert result.stats["total_pois"] == 2
+                    assert result.stats["total_judgments"] == 2
+                    assert result.stats["success_rate"] == 1.0
+
+                    # Verify content distribution
+                    assert result.stats["content_distribution"]["youtube"] == 1
+                    assert result.stats["content_distribution"]["spotify"] == 1
+
+    def test_coordinates_map_coverage(self, orchestrator):
+        """Test that all major Israeli cities are in the coordinates map."""
+        # This tests the internal coordinates map indirectly
+        cities = [
+            ("Tel Aviv", "Jerusalem"),
+            ("Haifa", "Eilat"),
+            ("Beer Sheva", "Akko"),
+            ("Jaffa", "Dead Sea"),
+            ("Nazareth", "Tiberias"),
+            ("Caesarea", "Masada"),
+        ]
+
+        for origin, destination in cities:
+            with patch.object(orchestrator.route_analyzer, "run", return_value=[]):
+                with patch.object(orchestrator.content_pipeline, "run", return_value=[]):
+                    # Should not raise ValueError for these cities
+                    result = orchestrator.run(origin, destination)
+                    assert isinstance(result, JourneyResult)
+
+    def test_journey_with_options(self, orchestrator, mock_route, mock_pois, mock_judgments):
+        """Test journey with custom options."""
+        options = {"max_pois": 5, "categories": ["religious", "historical"]}
+
+        with patch.object(orchestrator.osrm_client, "get_route", return_value=mock_route):
+            with patch.object(orchestrator.route_analyzer, "run", return_value=mock_pois):
+                with patch.object(orchestrator.content_pipeline, "run", return_value=mock_judgments):
+                    result = orchestrator.run("Tel Aviv", "Jerusalem", options=options)
+
+                    # Options are passed through but not currently used
+                    # This test just verifies they don't cause errors
+                    assert isinstance(result, JourneyResult)
+
+    def test_case_insensitive_location_names(self, orchestrator, mock_route):
+        """Test that location names are case-insensitive."""
+        with patch.object(orchestrator.route_analyzer, "run", return_value=[]):
+            with patch.object(orchestrator.content_pipeline, "run", return_value=[]):
+                # Should work with different cases
+                result1 = orchestrator.run("tel aviv", "jerusalem")
+                result2 = orchestrator.run("Tel Aviv", "Jerusalem")
+                result3 = orchestrator.run("TEL AVIV", "JERUSALEM")
+
+                assert all(isinstance(r, JourneyResult) for r in [result1, result2, result3])
