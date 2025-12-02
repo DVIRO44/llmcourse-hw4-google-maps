@@ -1,0 +1,24 @@
+logging:
+  max_bytes: 10485760
+  backup_count: 5
+  level: INFO
+  format: json
+
+routing:
+  osrm_url: "http://router.project-osrm.org"
+  fallback_to_claude: true
+  timeout_seconds: 10
+
+agents:
+  content_timeout: 30
+  judge_timeout: 10
+  max_retries: 2
+
+output:
+  journey_delay: 5
+  default_json_path: "./output/journey.json"
+  default_markdown_path: "./output/journey.md"
+
+poi:
+  count: 10
+  min_distance_between_km: 5.0
