@@ -150,6 +150,14 @@ class TourGuideOrchestrator:
                 "masada": (31.3159, 35.3539),
                 "rosh hanikra": (33.0894, 35.1075),
                 "bethlehem": (31.7054, 35.2024),
+                "holon": (32.0117, 34.7750),
+                "kiryat shmona": (33.2074, 35.5697),
+                "qiryat shmona": (33.2074, 35.5697),  # Alternative spelling
+                "ashdod": (31.8044, 34.6553),
+                "netanya": (32.3215, 34.8532),
+                "rishon lezion": (31.9730, 34.7925),
+                "petah tikva": (32.0878, 34.8878),
+                "rehovot": (31.8969, 34.8186),
             }
 
             origin_lower = origin.lower()
