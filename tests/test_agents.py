@@ -7,7 +7,7 @@ from tour_guide.agents.route_analyzer import RouteAnalyzerAgent
 from tour_guide.agents.youtube import YouTubeAgent
 from tour_guide.agents.spotify import SpotifyAgent
 from tour_guide.agents.history import HistoryAgent
-from tour_guide.models import POI, POICategory, ContentResult
+from tour_guide.models import POI, POICategory, ContentResult, JudgmentResult
 from tour_guide.routing.models import Route, Waypoint, RouteStep
 
 
@@ -709,3 +709,74 @@ class TestHistoryAgent:
                 history_agent.run(sample_poi)
 
             assert "Claude CLI failed" in str(exc_info.value)
+
+
+
+class TestJudgmentResult:
+    """Tests for JudgmentResult model."""
+
+    @pytest.fixture
+    def sample_content_youtube(self):
+        """Create sample YouTube content."""
+        return ContentResult(
+            content_type="youtube",
+            title="Test Video",
+            description="Test description",
+            relevance_score=85,
+            agent_name="youtube",
+            poi_name="Test POI",
+        )
+
+    @pytest.fixture
+    def sample_content_history(self):
+        """Create sample History content."""
+        return ContentResult(
+            content_type="history",
+            title="Test History",
+            description="Test narrative",
+            relevance_score=90,
+            agent_name="history",
+            poi_name="Test POI",
+        )
+
+    def test_judgment_result_creation(self, sample_content_history):
+        """Test creating a valid JudgmentResult."""
+        result = JudgmentResult(
+            poi_name="Test POI",
+            selected_content=sample_content_history,
+            selected_type="history",
+            reasoning="History provides the most educational value.",
+            scores={"youtube": 85, "spotify": 70, "history": 95},
+            all_content=[sample_content_history],
+        )
+
+        assert result.poi_name == "Test POI"
+        assert result.selected_type == "history"
+        assert result.scores["history"] == 95
+
+    def test_judgment_result_invalid_type(self, sample_content_history):
+        """Test that invalid selected_type raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            JudgmentResult(
+                poi_name="Test",
+                selected_content=sample_content_history,
+                selected_type="invalid",
+                reasoning="Test",
+            )
+
+        assert "Invalid selected_type" in str(exc_info.value)
+
+    def test_judgment_result_type_mismatch(
+        self, sample_content_youtube, sample_content_history
+    ):
+        """Test that type mismatch raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            JudgmentResult(
+                poi_name="Test",
+                selected_content=sample_content_youtube,
+                selected_type="history",  # Mismatch!
+                reasoning="Test",
+            )
+
+        assert "Mismatch" in str(exc_info.value)
+
