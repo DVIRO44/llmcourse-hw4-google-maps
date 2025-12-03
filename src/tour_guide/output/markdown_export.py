@@ -84,16 +84,27 @@ class MarkdownExporter:
             lines.append(f"#### ⭐ Selected: {selected_emoji} {judgment.selected_type.title()}\n")
             lines.append(f"**{judgment.selected_content.title}**\n")
             lines.append(f"{judgment.selected_content.description}\n")
+
+            # Add clickable URL for selected content
+            if judgment.selected_content.url:
+                lines.append(f"🔗 [View on {judgment.selected_type.title()}]({judgment.selected_content.url})\n")
+
             lines.append(f"**Why selected**: {judgment.reasoning}\n")
 
             # All options
             lines.append("#### All Content Options\n")
             for content in judgment.all_content:
                 emoji = self.EMOJI_MAP.get(content.content_type, "📄")
-                lines.append(
+                option_line = (
                     f"- {emoji} **{content.content_type.title()}**: "
                     f"{content.title} (Score: {content.relevance_score})"
                 )
+
+                # Add clickable URL if available
+                if content.url:
+                    option_line += f" - [Link]({content.url})"
+
+                lines.append(option_line)
 
             lines.append("\n---\n")
 

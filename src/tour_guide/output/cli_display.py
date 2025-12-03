@@ -112,6 +112,12 @@ class CLIDisplay:
             content_text.append(f"{content.content_type.title()}: ", style=f"bold {color}")
             content_text.append(f'"{content.title}"\n', style=color)
 
+            # Add clickable URL if available
+            if content.url:
+                content_text.append("   🔗 ", style="dim")
+                content_text.append(content.url, style=f"link {content.url} dim")
+                content_text.append("\n")
+
         content_text.append("\n")
 
         # Show selected content
@@ -122,6 +128,12 @@ class CLIDisplay:
         content_text.append("Selected: ", style="bold yellow")
         content_text.append(f"{selected_emoji} {judgment.selected_type.title()}", style=f"bold {selected_color}")
         content_text.append(f" (Score: {judgment.selected_content.relevance_score})\n", style="yellow")
+
+        # Add clickable URL for selected content
+        if judgment.selected_content.url:
+            content_text.append("   🔗 ", style="yellow")
+            content_text.append(judgment.selected_content.url, style=f"link {judgment.selected_content.url} yellow")
+            content_text.append("\n")
 
         # Show reasoning (truncated if too long)
         reasoning = judgment.reasoning

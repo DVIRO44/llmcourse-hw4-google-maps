@@ -79,6 +79,7 @@ class JSONExporter:
                     "title": judgment.selected_content.title,
                     "description": judgment.selected_content.description,
                     "score": judgment.selected_content.relevance_score,
+                    "url": judgment.selected_content.url,
                     "metadata": judgment.selected_content.metadata,
                 },
                 "all_options": [
@@ -87,6 +88,7 @@ class JSONExporter:
                         "title": content.title,
                         "description": content.description,
                         "score": content.relevance_score,
+                        "url": content.url,
                     }
                     for content in judgment.all_content
                 ],
